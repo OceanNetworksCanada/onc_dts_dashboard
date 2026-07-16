@@ -10,12 +10,17 @@ browser fetches and decodes DTS data directly from ONC's API using a token you p
 
 DTS measures temperature along a fiber-optic cable: each measurement is a profile of
 temperature vs. distance-along-fiber, alternating between two channels roughly every 10
-seconds. This dashboard shows:
+seconds. This dashboard shows, per channel, with a shared temperature scale across all four:
 
-1. **Latest profile** — temperature vs. distance, live, per channel.
-2. **Waterfall heatmap** — time × distance × temperature.
-3. **Point time series** — temperature over time at fiber positions you pick.
-4. **Map** — the cable route colored by current temperature.
+1. **Profile chart** — temperature vs. distance, stacked directly above its channel's
+   waterfall so the two share a pixel-aligned distance axis. The default line is a 5-minute
+   average (noise reduction); hovering the waterfall overlays the raw historical profile at
+   that instant on top.
+2. **Waterfall heatmap** — time × distance × temperature. Hovering shows a readout and
+   crosshair, and drives the profile-chart overlay and point-series time guideline above/below.
+3. **Point time series** — 5-minute-averaged temperature over time at fiber positions you pick.
+4. **Map** — GMRT bathymetry basemap, the DTS cable route colored by current temperature, and
+   ONC's NEPTUNE/VENUS submarine backbone cable as a clickable reference layer.
 
 ## Bring your own token
 
