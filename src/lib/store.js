@@ -1,7 +1,7 @@
 // Reactive in-memory state: per-channel ring buffers of decoded DTS profiles, plus
 // derived views for the profile chart, waterfall heatmap, and point time-series.
 import { reactive } from 'vue'
-import { HISTORY_CAP, TRIM_STORAGE_KEY, POINTS_STORAGE_KEY } from '../config.js'
+import { HISTORY_CAP, TRIM_STORAGE_KEY, POINTS_STORAGE_KEY, AVERAGE_WINDOW_MS } from '../config.js'
 
 function createChannelState() {
   return { profiles: [] }
@@ -91,6 +91,10 @@ export function createDtsStore() {
     trim: loadStoredTrim(),
     // Per-channel list of fiber positions (meters) picked for the point time-series view.
     points: loadStoredPoints(),
+    // Per-channel waterfall hover position: { timeMs, distance } | null. Session-only, not
+    // persisted — drives the cross-chart hover overlay/guideline on the profile and
+    // point-series charts.
+    hover: { 1: null, 2: null },
   })
 
   function addProfile(profile) {
@@ -144,6 +148,113 @@ export function createDtsStore() {
     })
   }
 
+  /**
+   * Temperature min/max across BOTH channels' currently-buffered, trim-applied profiles —
+   * the single shared color/axis range used by every view (profile, waterfall, points, map)
+   * so they're directly comparable.
+   */
+  function temperatureRange() {
+    let min = Infinity
+    let max = -Infinity
+    for (const ch of [1, 2]) {
+      const trim = getTrim(ch)
+      for (const p of history(ch)) {
+        const tp = trimProfile(p, trim)
+        for (let i = 0; i < tp.temperature.length; i++) {
+          const v = tp.temperature[i]
+          if (v < min) min = v
+          if (v > max) max = v
+        }
+      }
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+    if (min === max) {
+      min -= 0.5
+      max += 0.5
+    }
+    return { min, max }
+  }
+
+  /**
+   * Default profile-chart line: mean temperature per distance bin over the trailing
+   * AVERAGE_WINDOW_MS, relative to the latest profile's own timestamp (not wall-clock —
+   * historical replay can run much faster than real time). Smooths per-measurement noise.
+   */
+  function averagedProfile(channel) {
+    const trim = getTrim(channel)
+    const profiles = history(channel).map((p) => trimProfile(p, trim))
+    if (profiles.length === 0) return null
+
+    const latest = profiles[profiles.length - 1]
+    const cutoff = new Date(latest.time).getTime() - AVERAGE_WINDOW_MS
+    const windowed = profiles.filter(
+      (p) => new Date(p.time).getTime() >= cutoff && p.temperature.length === latest.temperature.length,
+    )
+    if (windowed.length === 0) return latest
+
+    const n = latest.temperature.length
+    const sum = new Float64Array(n)
+    for (const p of windowed) {
+      for (let i = 0; i < n; i++) sum[i] += p.temperature[i]
+    }
+    const avg = new Float32Array(n)
+    for (let i = 0; i < n; i++) avg[i] = sum[i] / windowed.length
+
+    return { ...latest, temperature: avg, meta: { ...latest.meta, averagedOverN: windowed.length } }
+  }
+
+  /**
+   * Default point-series line: `pointSeries` bucketed into AVERAGE_WINDOW_MS-wide bins
+   * (mean per bin), producing a smoothed ~5-minute-resolution series instead of raw
+   * per-measurement noise.
+   */
+  function binnedPointSeries(channel, targetDistance) {
+    const raw = pointSeries(channel, targetDistance)
+    if (raw.length === 0) return []
+
+    const bins = new Map() // binStartMs -> { sum, count }
+    for (const { time, value } of raw) {
+      if (value == null) continue
+      const t = new Date(time).getTime()
+      const binStart = Math.floor(t / AVERAGE_WINDOW_MS) * AVERAGE_WINDOW_MS
+      const bin = bins.get(binStart) ?? { sum: 0, count: 0 }
+      bin.sum += value
+      bin.count += 1
+      bins.set(binStart, bin)
+    }
+
+    return [...bins.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([binStart, { sum, count }]) => ({
+        time: new Date(binStart + AVERAGE_WINDOW_MS / 2).toISOString(),
+        value: sum / count,
+      }))
+  }
+
+  /** Nearest-time historical profile (trim-applied), for the waterfall hover overlay. */
+  function profileAt(channel, timeMs) {
+    const profiles = history(channel)
+    if (profiles.length === 0) return null
+    let best = profiles[0]
+    let bestDiff = Math.abs(new Date(best.time).getTime() - timeMs)
+    for (const p of profiles) {
+      const diff = Math.abs(new Date(p.time).getTime() - timeMs)
+      if (diff < bestDiff) {
+        best = p
+        bestDiff = diff
+      }
+    }
+    return trimProfile(best, getTrim(channel))
+  }
+
+  function setHover(channel, hover) {
+    state.hover[channel] = hover
+  }
+
+  function clearHover(channel) {
+    state.hover[channel] = null
+  }
+
   function getPoints(channel) {
     return state.points[channel] ?? []
   }
@@ -180,6 +291,12 @@ export function createDtsStore() {
     getPoints,
     addPoint,
     removePoint,
+    temperatureRange,
+    averagedProfile,
+    binnedPointSeries,
+    profileAt,
+    setHover,
+    clearHover,
   }
 }
 

@@ -62,14 +62,17 @@ onUnmounted(stopPoller)
       <strong>Poller error:</strong> {{ pollerError }}
     </section>
 
+    <!-- Profile chart stacked directly over its channel's waterfall, sharing one distance
+         axis (rendered once, on the waterfall) so the two are visually and pixel-aligned. -->
     <div class="charts-grid">
-      <ProfileChart :channel="1" color="#58a6ff" />
-      <ProfileChart :channel="2" color="#3fb950" />
-    </div>
-
-    <div class="charts-grid">
-      <WaterfallCanvas :channel="1" />
-      <WaterfallCanvas :channel="2" />
+      <div class="channel-panel">
+        <ProfileChart :channel="1" color="#58a6ff" hover-color="#f0883e" :show-x-axis="false" />
+        <WaterfallCanvas :channel="1" />
+      </div>
+      <div class="channel-panel">
+        <ProfileChart :channel="2" color="#3fb950" hover-color="#f0883e" :show-x-axis="false" />
+        <WaterfallCanvas :channel="2" />
+      </div>
     </div>
 
     <div class="charts-grid">
@@ -109,5 +112,9 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: 1rem;
+}
+.channel-panel {
+  display: flex;
+  flex-direction: column;
 }
 </style>

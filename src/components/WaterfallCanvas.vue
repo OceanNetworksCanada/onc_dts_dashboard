@@ -2,58 +2,55 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { dtsStore } from '../lib/store.js'
 import { valueToRgb, turboGradientCss } from '../lib/colormap.js'
+import { AXIS_GUTTER_PX } from '../config.js'
 
 const props = defineProps({
   channel: { type: Number, required: true },
 })
 
 const canvasRef = ref(null)
+const overlayRef = ref(null)
 const containerRef = ref(null)
-const colorRange = ref(null) // { min, max }
+const hoverReadout = ref(null) // { distance, timeMs, temp }
 
 const matrix = computed(() => dtsStore.matrixView(props.channel))
+const tempRange = computed(() => dtsStore.temperatureRange())
+
+// Non-reactive: the exact matrix used for the last render, so mousemove can map pixels ->
+// (distance, time) without recomputing/re-trimming on every cursor move.
+let currentMatrix = null
 
 let rafId = null
 let resizeObserver = null
+
+function sizeCanvas(canvas, container) {
+  const displayWidth = Math.max(1, Math.floor(container.clientWidth))
+  const displayHeight = Math.max(1, Math.floor(container.clientHeight))
+  if (canvas.width !== displayWidth) canvas.width = displayWidth
+  if (canvas.height !== displayHeight) canvas.height = displayHeight
+}
 
 function render() {
   const canvas = canvasRef.value
   const container = containerRef.value
   if (!canvas || !container) return
-
-  const displayWidth = Math.max(1, Math.floor(container.clientWidth))
-  const displayHeight = Math.max(1, Math.floor(container.clientHeight))
-  if (canvas.width !== displayWidth) canvas.width = displayWidth
-  if (canvas.height !== displayHeight) canvas.height = displayHeight
+  sizeCanvas(canvas, container)
+  if (overlayRef.value) sizeCanvas(overlayRef.value, container)
 
   const ctx = canvas.getContext('2d')
   const m = matrix.value
+  currentMatrix = m
   if (!m || m.rows.length === 0 || m.distance.length === 0) {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    colorRange.value = null
     return
   }
+
+  const range = tempRange.value
+  if (!range) return
+  const { min, max } = range
 
   const nDist = m.distance.length
   const nTime = m.rows.length
-
-  let min = Infinity
-  let max = -Infinity
-  for (const row of m.rows) {
-    for (let j = 0; j < row.length; j++) {
-      const v = row[j]
-      if (v < min) min = v
-      if (v > max) max = v
-    }
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
-    colorRange.value = null
-    return
-  }
-  if (min === max) {
-    min -= 0.5
-    max += 0.5
-  }
 
   // Render at native (distance x time) resolution offscreen, then scale up to the
   // display canvas — far cheaper than per-pixel drawing at display resolution.
@@ -82,8 +79,6 @@ function render() {
   ctx.imageSmoothingEnabled = true
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(off, 0, 0, nDist, nTime, 0, 0, canvas.width, canvas.height)
-
-  colorRange.value = { min, max }
 }
 
 function scheduleRender() {
@@ -95,6 +90,58 @@ function scheduleRender() {
 }
 
 watch(matrix, scheduleRender)
+watch(tempRange, scheduleRender)
+
+function drawCrosshair(x, y) {
+  const overlay = overlayRef.value
+  if (!overlay) return
+  const ctx = overlay.getContext('2d')
+  ctx.clearRect(0, 0, overlay.width, overlay.height)
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x, 0)
+  ctx.lineTo(x, overlay.height)
+  ctx.moveTo(0, y)
+  ctx.lineTo(overlay.width, y)
+  ctx.stroke()
+}
+
+function clearCrosshair() {
+  const overlay = overlayRef.value
+  if (!overlay) return
+  overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height)
+}
+
+function onMouseMove(e) {
+  const canvas = canvasRef.value
+  const m = currentMatrix
+  if (!canvas || !m || m.rows.length === 0 || m.distance.length === 0) return
+
+  const rect = canvas.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) return
+
+  const nDist = m.distance.length
+  const nTime = m.rows.length
+  const distIdx = Math.min(nDist - 1, Math.max(0, Math.floor((x / rect.width) * nDist)))
+  const timeIdx = Math.min(nTime - 1, Math.max(0, Math.floor((y / rect.height) * nTime)))
+
+  const distance = m.distance[distIdx]
+  const timeMs = new Date(m.times[timeIdx]).getTime()
+  const temp = m.rows[timeIdx][distIdx]
+
+  hoverReadout.value = { distance, timeMs, temp }
+  dtsStore.setHover(props.channel, { timeMs, distance })
+  drawCrosshair(x, y)
+}
+
+function onMouseLeave() {
+  hoverReadout.value = null
+  dtsStore.clearHover(props.channel)
+  clearCrosshair()
+}
 
 onMounted(() => {
   scheduleRender()
@@ -126,7 +173,11 @@ const gradientCss = turboGradientCss()
   <div class="waterfall panel">
     <div class="header">
       <span>Channel {{ channel }} — waterfall (time × distance)</span>
-      <span class="muted" v-if="timeLabels">{{ timeLabels.count }} profiles</span>
+      <span class="muted" v-if="hoverReadout">
+        {{ hoverReadout.distance.toFixed(1) }} m @ {{ new Date(hoverReadout.timeMs).toLocaleTimeString() }} —
+        {{ hoverReadout.temp.toFixed(2) }}°C
+      </span>
+      <span class="muted" v-else-if="timeLabels">{{ timeLabels.count }} profiles</span>
       <span class="muted" v-else>no data yet</span>
     </div>
 
@@ -135,8 +186,14 @@ const gradientCss = turboGradientCss()
         <span>{{ new Date(timeLabels.oldest).toLocaleTimeString() }}</span>
         <span>{{ new Date(timeLabels.newest).toLocaleTimeString() }}</span>
       </div>
-      <div ref="containerRef" class="canvas-wrap">
+      <div
+        ref="containerRef"
+        class="canvas-wrap"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+      >
         <canvas ref="canvasRef"></canvas>
+        <canvas ref="overlayRef" class="overlay"></canvas>
       </div>
     </div>
 
@@ -146,10 +203,10 @@ const gradientCss = turboGradientCss()
       <span>{{ distanceLabels.max.toFixed(0) }} m</span>
     </div>
 
-    <div class="legend" v-if="colorRange">
-      <span>{{ colorRange.min.toFixed(1) }}°C</span>
+    <div class="legend" v-if="tempRange">
+      <span>{{ tempRange.min.toFixed(1) }}°C</span>
       <div class="swatch" :style="{ background: gradientCss }"></div>
-      <span>{{ colorRange.max.toFixed(1) }}°C</span>
+      <span>{{ tempRange.max.toFixed(1) }}°C</span>
     </div>
   </div>
 </template>
@@ -160,6 +217,9 @@ const gradientCss = turboGradientCss()
   flex-direction: column;
   gap: 0.5rem;
   height: 420px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 .header {
   display: flex;
@@ -180,6 +240,8 @@ const gradientCss = turboGradientCss()
   color: var(--muted);
   writing-mode: vertical-rl;
   text-orientation: mixed;
+  width: v-bind('`${AXIS_GUTTER_PX}px`');
+  flex: none;
 }
 .canvas-wrap {
   flex: 1;
@@ -191,6 +253,12 @@ canvas {
   height: 100%;
   display: block;
   border-radius: 4px;
+}
+canvas.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 0;
 }
 .distance-axis {
   display: flex;

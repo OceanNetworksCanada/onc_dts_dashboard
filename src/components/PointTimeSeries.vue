@@ -13,6 +13,7 @@ const canvasRef = ref(null)
 let chart = null
 
 const points = computed(() => dtsStore.getPoints(props.channel))
+const tempRange = computed(() => dtsStore.temperatureRange())
 const newPointInput = ref('')
 
 function addPoint() {
@@ -30,7 +31,10 @@ function seriesFor(distance) {
   // With `parsing: false`, Chart.js expects the time scale's internal numeric form
   // (epoch ms) directly, not a Date object — a Date here silently breaks scale min/max
   // detection and the chart renders as an empty default day span.
-  return dtsStore.pointSeries(props.channel, distance).map((s) => ({
+  // Default line is the ~5-min-binned average (dtsStore.binnedPointSeries), smoothing
+  // per-measurement noise; raw per-measurement data is what the waterfall hover overlay
+  // draws a guideline against.
+  return dtsStore.binnedPointSeries(props.channel, distance).map((s) => ({
     x: new Date(s.time).getTime(),
     y: s.value,
   }))
@@ -48,6 +52,27 @@ const datasets = computed(() =>
   })),
 )
 
+/** Draws a vertical guideline at the waterfall's hovered time (this channel only). */
+const hoverGuidelinePlugin = {
+  id: 'hoverGuideline',
+  afterDatasetsDraw(chartInstance) {
+    const hover = dtsStore.state.hover[props.channel]
+    if (!hover) return
+    const xScale = chartInstance.scales.x
+    const px = xScale.getPixelForValue(hover.timeMs)
+    if (px < xScale.left || px > xScale.right) return
+    const { ctx, chartArea } = chartInstance
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+    ctx.setLineDash([4, 3])
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(px, chartArea.top)
+    ctx.lineTo(px, chartArea.bottom)
+    ctx.stroke()
+    ctx.restore()
+  },
+}
 
 onMounted(() => {
   chart = new Chart(canvasRef.value, {
@@ -59,10 +84,15 @@ onMounted(() => {
       parsing: false,
       scales: {
         x: { type: 'time', title: { display: true, text: 'Time' } },
-        y: { title: { display: true, text: 'Temperature (°C)' } },
+        y: {
+          title: { display: true, text: 'Temperature (°C)' },
+          min: tempRange.value?.min,
+          max: tempRange.value?.max,
+        },
       },
       plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12 } } },
     },
+    plugins: [hoverGuidelinePlugin],
   })
 })
 
@@ -79,12 +109,24 @@ watch(datasets, (ds) => {
   chart.data.datasets.splice(0, chart.data.datasets.length, ...ds)
   chart.update()
 })
+
+watch(tempRange, (range) => {
+  if (!chart) return
+  chart.options.scales.y.min = range?.min
+  chart.options.scales.y.max = range?.max
+  chart.update('none')
+})
+
+watch(
+  () => dtsStore.state.hover[props.channel],
+  () => chart?.update('none'),
+)
 </script>
 
 <template>
   <div class="point-series panel">
     <div class="header">
-      <span>Channel {{ channel }} — temperature at selected points</span>
+      <span>Channel {{ channel }} — temperature at selected points (5-min avg)</span>
     </div>
 
     <div class="controls">

@@ -66,6 +66,24 @@ and phase breakdown; this file is working notes for continuing implementation.
    an export named X" errors that HMR couldn't self-heal). Symptom: components silently using
    stale module instances (e.g. store state not shared). Fix: kill and restart the dev server
    (`npx vite --port <N>`), don't just hot-reload through it.
+10. **GMRT's tile "service" is actually WMS, not XYZ/TMS** — there's no documented tile
+    endpoint. MapLibre/Mapbox GL's raster source supports a `{bbox-epsg-3857}` template token
+    specifically for wiring a WMS `GetMap` request up as if it were an XYZ source; see
+    `GMRT_STYLE` in `MapView.vue` (`LAYERS=topo`, `CRS=EPSG:3857`). Confirmed working live —
+    real bathymetry tiles render.
+11. **Historical/backfill replay timestamps are not evenly spaced** — during fast cursor-paged
+    replay, consecutive decoded profiles can jump by hours/days between them (archive gaps),
+    unlike live cadence (~10-20s). This makes `binnedPointSeries`' bins mostly sparse/empty
+    with a long overall x-domain, so a waterfall-hover time often lands very close to the
+    chart's right edge even when hovering the middle of the waterfall — this is a testing-data
+    artifact of accelerated replay, not a bug in the hover→guideline pixel mapping. Don't
+    "fix" the guideline math based on how it looks during fast replay; verify against roughly
+    real-time-paced data if the positioning is ever in question.
+12. **Chart.js scale `afterFit` hook can force a fixed pixel width** —
+    `scales.y.afterFit = (scale) => { scale.width = AXIS_GUTTER_PX }` — used to pixel-align
+    `ProfileChart`'s y-axis gutter with `WaterfallCanvas`'s CSS-fixed `.time-axis` width
+    (`AXIS_GUTTER_PX` in `config.js`), so the two stack with a shared, aligned distance axis
+    regardless of tick label content width.
 
 ## State shape (`src/lib/store.js`)
 
@@ -78,18 +96,35 @@ and phase breakdown; this file is working notes for continuing implementation.
 - `dtsStore.matrixView(channel)`: trimmed `(time × distance)` view for the waterfall —
   `{ distance, times, rows }`, rows oldest→newest.
 - `dtsStore.pointSeries(channel, targetDistance)`: trim-aware temperature-over-time at the
-  nearest fiber position to `targetDistance`.
+  nearest fiber position to `targetDistance` (raw, per-measurement).
+- `dtsStore.binnedPointSeries(channel, targetDistance)`: `pointSeries` bucketed into
+  `AVERAGE_WINDOW_MS`-wide bins (mean per bin) — the default line drawn in `PointTimeSeries.vue`.
+- `dtsStore.averagedProfile(channel)`: mean temperature per distance bin over the trailing
+  `AVERAGE_WINDOW_MS`, relative to the latest profile's own timestamp — the default line drawn
+  in `ProfileChart.vue`.
+- `dtsStore.profileAt(channel, timeMs)`: nearest-time historical profile (linear scan,
+  `HISTORY_CAP`-bounded) — used for the waterfall-hover overlay on `ProfileChart.vue`.
+- `dtsStore.temperatureRange()`: shared `{min, max}` across **both channels'** trimmed
+  buffered profiles — the single color/axis range used by every view.
+- `dtsStore.state.hover[channel]`: `{ timeMs, distance } | null`, set by `WaterfallCanvas.vue`
+  on mousemove — drives the profile-chart overlay and point-series guideline for that channel.
 
 ## Build status
 
-All 5 phases complete and verified in-browser against the live ONC API (with historical
-backfill used for testing while the instrument was offline):
+All 5 v1 phases plus a v2 polish pass are complete and verified in-browser against the live
+ONC API (with historical backfill used for testing while the instrument was offline):
 
-- Phase 0 (CORS/API verify), Phase 1 (profile chart + status bar + trim controls), Phase 2
+- v1: Phase 0 (CORS/API verify), Phase 1 (profile chart + status bar + trim controls), Phase 2
   (waterfall heatmap), Phase 3 (point time series), Phase 4 (map — `src/components/MapView.vue`,
   cable geometry from `scripts/generate-cable-route.mjs`, real Endeavour-field origin coords
   provided by the user), Phase 5 (`.github/workflows/deploy.yml`, no secrets needed since the
-  ONC token is never baked into the build).
+  ONC token is never baked into the build). Deployed at
+  https://oceannetworkscanada.github.io/onc_dts_dashboard/.
+- v2 polish: profile chart + waterfall stacked and pixel-aligned per channel (`App.vue`
+  `.channel-panel`); one shared temperature range across all views/both channels
+  (`dtsStore.temperatureRange()`); default profile/point-series lines are 5-minute averages,
+  with waterfall-hover overlaying the raw historical data on top; GMRT bathymetry basemap
+  replacing OSM; ONC's NEPTUNE/VENUS backbone cable as a static reference layer on the map.
 
 Remaining open items (not blocking, see plan file):
 - Cable geometry is a placeholder projection from a single origin + azimuth per channel, not a

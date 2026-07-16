@@ -3,23 +3,31 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import cableRouteRaw from '../assets/cable-route.geojson?raw'
+import backboneCableRaw from '../assets/backbone-cable.geojson?raw'
 import { dtsStore, trimProfile } from '../lib/store.js'
 import { valueToCss } from '../lib/colormap.js'
 
 const cableRoute = JSON.parse(cableRouteRaw)
+const backboneCable = JSON.parse(backboneCableRaw)
 
-// Free, no-token raster basemap (OpenStreetMap tiles) — matches the "no API token" constraint.
-const OSM_STYLE = {
+// GMRT (Global Multi-Resolution Topography) bathymetry, via their WMS GetMap endpoint wired up
+// as a raster tile source using MapLibre's `{bbox-epsg-3857}` template token — no API key,
+// CC BY 4.0. No OSM fallback: bathymetry is the right context for a seafloor DTS deployment.
+const GMRT_STYLE = {
   version: 8,
   sources: {
-    osm: {
+    gmrt: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: [
+        'https://www.gmrt.org/services/mapserver/wms_merc?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap' +
+          '&LAYERS=topo&CRS=EPSG:3857&FORMAT=image/png&TRANSPARENT=false&STYLES=&WIDTH=256&HEIGHT=256' +
+          '&BBOX={bbox-epsg-3857}',
+      ],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
+      attribution: 'GMRT (CC BY 4.0) — Ryan et al., Global Multi-Resolution Topography',
     },
   },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+  layers: [{ id: 'gmrt', type: 'raster', source: 'gmrt' }],
 }
 
 const CHANNEL_COLOR = { 1: '#58a6ff', 2: '#3fb950' }
@@ -43,7 +51,9 @@ function nearestIndex(distanceArr, target) {
 }
 
 /** Build a Point FeatureCollection: one point per geometry sample, colored by the
- * temperature nearest that distance in the latest (trim-aware) profile for its channel. */
+ * temperature nearest that distance in the latest (trim-aware) profile for its channel.
+ * Uses the dashboard-wide shared temperature range so the map's colors are directly
+ * comparable to the profile/waterfall/point-series views. */
 function buildPointFeatures() {
   const profilesByChannel = {}
   for (const f of cableRoute.features) {
@@ -53,8 +63,10 @@ function buildPointFeatures() {
     }
   }
 
-  let min = Infinity
-  let max = -Infinity
+  const range = dtsStore.temperatureRange()
+  const min = range?.min ?? 0
+  const max = range?.max ?? 1
+
   const rawFeatures = []
   for (const f of cableRoute.features) {
     const ch = f.properties.channel
@@ -67,16 +79,8 @@ function buildPointFeatures() {
         const idx = nearestIndex(profile.distance, distances[i])
         temp = idx >= 0 ? profile.temperature[idx] : null
       }
-      if (temp != null) {
-        if (temp < min) min = temp
-        if (temp > max) max = temp
-      }
       rawFeatures.push({ channel: ch, distance: distances[i], coord: coords[i], temp })
     }
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) {
-    min = 0
-    max = 1
   }
 
   return {
@@ -104,13 +108,29 @@ onMounted(() => {
 
   map = new maplibregl.Map({
     container: mapContainer.value,
-    style: OSM_STYLE,
+    style: GMRT_STYLE,
     center: [lon0, lat0],
     zoom: 15,
   })
   map.addControl(new maplibregl.NavigationControl(), 'top-right')
 
   map.on('load', () => {
+    // ONC's NEPTUNE/VENUS submarine backbone cable network, for geographic context — static
+    // reference layer, not colored by temperature, drawn below the DTS layers.
+    map.addSource('backbone-cable', { type: 'geojson', data: backboneCable })
+    map.addLayer({
+      id: 'backbone-cable',
+      type: 'line',
+      source: 'backbone-cable',
+      paint: { 'line-color': '#8b949e', 'line-width': 1, 'line-dasharray': [2, 2], 'line-opacity': 0.7 },
+    })
+    map.on('click', 'backbone-cable', (e) => {
+      const name = e.features[0].properties.Name || 'Backbone cable'
+      new maplibregl.Popup().setLngLat(e.lngLat).setHTML(`<strong>${name}</strong>`).addTo(map)
+    })
+    map.on('mouseenter', 'backbone-cable', () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'backbone-cable', () => { map.getCanvas().style.cursor = '' })
+
     map.addSource('cable-lines', { type: 'geojson', data: cableRoute })
     map.addLayer({
       id: 'cable-lines',
@@ -170,8 +190,9 @@ watch(
       </span>
     </div>
     <p class="muted note">
-      Cable geometry is a placeholder projection from a single origin point, not a survey — see
-      <code>scripts/generate-cable-route.mjs</code>.
+      DTS cable geometry is a placeholder projection from a single origin point, not a survey —
+      see <code>scripts/generate-cable-route.mjs</code>. Dashed grey line is ONC's submarine
+      backbone network (click for name); basemap is GMRT bathymetry.
     </p>
     <div ref="mapContainer" class="map-container"></div>
   </div>

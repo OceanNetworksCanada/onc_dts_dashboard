@@ -18,6 +18,15 @@ export const ROW_LIMIT = 100
 // Max profiles retained per channel in the in-memory ring buffer (for the waterfall/point views).
 export const HISTORY_CAP = 500
 
+// Fixed left-gutter width (px) shared by ProfileChart's y-axis and WaterfallCanvas's time-axis,
+// so the two stack with pixel-aligned distance axes regardless of tick label content.
+export const AXIS_GUTTER_PX = 48
+
+// Window used for the "default" (non-hover) smoothed profile/point-series lines, relative to
+// the latest profile's own timestamp (not wall-clock time — historical replay can run much
+// faster than real time).
+export const AVERAGE_WINDOW_MS = 5 * 60 * 1000
+
 export const TOKEN_STORAGE_KEY = 'onc-dts-dashboard:onc-token'
 export const DEVICE_STORAGE_KEY = 'onc-dts-dashboard:device-code'
 export const START_TIME_STORAGE_KEY = 'onc-dts-dashboard:start-time'
