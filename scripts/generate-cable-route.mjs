@@ -9,11 +9,11 @@ import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const ORIGIN = { lat: 47.9481685, lon: -129.09884676 }
+const ORIGIN = { lat: 47.948072, lon: -129.098919 }
 
 const CHANNELS = [
-  { channel: 1, azimuthDeg: 15, lengthM: 560, stepM: 5 },
-  { channel: 2, azimuthDeg: 105, lengthM: 400, stepM: 5 },
+  { channel: 1, azimuthDeg: 110, lengthM: 560, stepM: 5 },
+  { channel: 2, azimuthDeg: 20, lengthM: 400, stepM: 5 },
 ]
 
 const EARTH_RADIUS_M = 6371000
