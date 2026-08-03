@@ -2,6 +2,7 @@
 import { ref, onUnmounted } from 'vue'
 import TokenGate from './components/TokenGate.vue'
 import StatusBar from './components/StatusBar.vue'
+import ColorRangeControls from './components/ColorRangeControls.vue'
 import ProfileChart from './components/ProfileChart.vue'
 import WaterfallCanvas from './components/WaterfallCanvas.vue'
 import PointTimeSeries from './components/PointTimeSeries.vue'
@@ -61,6 +62,8 @@ onUnmounted(stopPoller)
     <section v-if="pollerError" class="panel error">
       <strong>Poller error:</strong> {{ pollerError }}
     </section>
+
+    <ColorRangeControls />
 
     <!-- Profile chart stacked directly over its channel's waterfall, sharing one distance
          axis (rendered once, on the waterfall) so the two are visually and pixel-aligned. -->

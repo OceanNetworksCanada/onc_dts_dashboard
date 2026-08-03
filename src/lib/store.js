@@ -1,7 +1,13 @@
 // Reactive in-memory state: per-channel ring buffers of decoded DTS profiles, plus
 // derived views for the profile chart, waterfall heatmap, and point time-series.
 import { reactive } from 'vue'
-import { HISTORY_CAP, TRIM_STORAGE_KEY, POINTS_STORAGE_KEY, AVERAGE_WINDOW_MS } from '../config.js'
+import {
+  HISTORY_CAP,
+  TRIM_STORAGE_KEY,
+  POINTS_STORAGE_KEY,
+  COLOR_RANGE_STORAGE_KEY,
+  AVERAGE_WINDOW_MS,
+} from '../config.js'
 
 function createChannelState() {
   return { profiles: [] }
@@ -56,6 +62,24 @@ function persistPoints(points) {
   }
 }
 
+function loadStoredColorRange() {
+  try {
+    const raw = localStorage.getItem(COLOR_RANGE_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function persistColorRange(colorRange) {
+  try {
+    if (colorRange) localStorage.setItem(COLOR_RANGE_STORAGE_KEY, JSON.stringify(colorRange))
+    else localStorage.removeItem(COLOR_RANGE_STORAGE_KEY)
+  } catch {
+    // localStorage unavailable — color range override just won't persist.
+  }
+}
+
 /**
  * Slice a profile's distance/temperature arrays to [min, max] meters (either bound
  * optional). Used to crop the in-instrument lead-in and past-end-of-fibre sections
@@ -91,6 +115,11 @@ export function createDtsStore() {
     trim: loadStoredTrim(),
     // Per-channel list of fiber positions (meters) picked for the point time-series view.
     points: loadStoredPoints(),
+    // Manual override for the shared color/axis range, e.g. { min: -2, max: 15 } (either bound
+    // may be null to fall back to the auto range for just that bound). Persists across
+    // reconnects/reloads like trim — a view preference, not session data. Useful when a damaged
+    // fiber section produces out-of-range readings that blow out the auto-computed range.
+    colorRange: loadStoredColorRange(),
     // Per-channel waterfall hover position: { timeMs, distance } | null. Session-only, not
     // persisted — drives the cross-chart hover overlay/guideline on the profile and
     // point-series charts.
@@ -150,10 +179,9 @@ export function createDtsStore() {
 
   /**
    * Temperature min/max across BOTH channels' currently-buffered, trim-applied profiles —
-   * the single shared color/axis range used by every view (profile, waterfall, points, map)
-   * so they're directly comparable.
+   * the auto-computed color/axis range, before any manual override.
    */
-  function temperatureRange() {
+  function autoTemperatureRange() {
     let min = Infinity
     let max = -Infinity
     for (const ch of [1, 2]) {
@@ -173,6 +201,36 @@ export function createDtsStore() {
       max += 0.5
     }
     return { min, max }
+  }
+
+  /**
+   * Single shared color/axis range used by every view (profile, waterfall, points, map) so
+   * they're directly comparable. Falls back to the auto-computed range, but either bound can
+   * be manually pinned via setColorRange — e.g. to clamp out a damaged fiber section that
+   * would otherwise blow out the auto range for both channels.
+   */
+  function temperatureRange() {
+    const auto = autoTemperatureRange()
+    const override = state.colorRange
+    if (!override || (override.min == null && override.max == null)) return auto
+    return {
+      min: override.min ?? auto?.min,
+      max: override.max ?? auto?.max,
+    }
+  }
+
+  function getColorRange() {
+    return state.colorRange ?? { min: null, max: null }
+  }
+
+  function setColorRange(min, max) {
+    state.colorRange = { min, max }
+    persistColorRange(state.colorRange)
+  }
+
+  function clearColorRange() {
+    state.colorRange = null
+    persistColorRange(null)
   }
 
   /**
@@ -292,6 +350,10 @@ export function createDtsStore() {
     addPoint,
     removePoint,
     temperatureRange,
+    autoTemperatureRange,
+    getColorRange,
+    setColorRange,
+    clearColorRange,
     averagedProfile,
     binnedPointSeries,
     profileAt,
