@@ -23,7 +23,7 @@ function resetRange() {
 
 <template>
   <div class="color-range panel">
-    <span class="muted">Color scale (both channels)</span>
+    <span class="muted">Color scale (all channels)</span>
     <label class="muted">
       Min
       <input

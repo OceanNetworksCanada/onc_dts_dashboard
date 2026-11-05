@@ -10,7 +10,9 @@ browser fetches and decodes DTS data directly from ONC's API using a token you p
 
 DTS measures temperature along a fiber-optic cable: each measurement is a profile of
 temperature vs. distance-along-fiber, alternating between two channels roughly every 10
-seconds. This dashboard shows, per channel, with a shared temperature scale across all four:
+seconds. The instrument streams both channels, but the UI only displays the channels listed
+in `ACTIVE_CHANNELS` (`src/config.js`) — Channel 2 only, by default. This dashboard shows,
+per displayed channel, with a shared temperature scale across all views:
 
 1. **Profile chart** — temperature vs. distance, stacked directly above its channel's
    waterfall so the two share a pixel-aligned distance axis. The default line is a 5-minute

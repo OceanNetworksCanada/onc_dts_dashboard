@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { dtsStore } from '../lib/store.js'
+import { ACTIVE_CHANNELS } from '../config.js'
 
 const props = defineProps({
   pollerStatus: { type: String, default: 'idle' },
@@ -17,7 +18,7 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer))
 
 const channelInfos = computed(() =>
-  [1, 2].map((channel) => {
+  ACTIVE_CHANNELS.map((channel) => {
     const profile = dtsStore.latest(channel)
     if (!profile) return { channel, profile: null }
     const ageMs = now.value - new Date(profile.time).getTime()

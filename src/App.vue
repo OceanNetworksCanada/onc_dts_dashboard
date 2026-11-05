@@ -9,6 +9,9 @@ import PointTimeSeries from './components/PointTimeSeries.vue'
 import MapView from './components/MapView.vue'
 import { DtsPoller } from './lib/onc.js'
 import { dtsStore } from './lib/store.js'
+import { ACTIVE_CHANNELS } from './config.js'
+
+const CHANNEL_COLOR = { 1: '#58a6ff', 2: '#3fb950' }
 
 const pollerStatus = ref('idle')
 const pollerError = ref('')
@@ -68,19 +71,14 @@ onUnmounted(stopPoller)
     <!-- Profile chart stacked directly over its channel's waterfall, sharing one distance
          axis (rendered once, on the waterfall) so the two are visually and pixel-aligned. -->
     <div class="charts-grid">
-      <div class="channel-panel">
-        <ProfileChart :channel="1" color="#58a6ff" hover-color="#f0883e" :show-x-axis="false" />
-        <WaterfallCanvas :channel="1" />
-      </div>
-      <div class="channel-panel">
-        <ProfileChart :channel="2" color="#3fb950" hover-color="#f0883e" :show-x-axis="false" />
-        <WaterfallCanvas :channel="2" />
+      <div v-for="channel in ACTIVE_CHANNELS" :key="channel" class="channel-panel">
+        <ProfileChart :channel="channel" :color="CHANNEL_COLOR[channel]" hover-color="#f0883e" :show-x-axis="false" />
+        <WaterfallCanvas :channel="channel" />
       </div>
     </div>
 
     <div class="charts-grid">
-      <PointTimeSeries :channel="1" />
-      <PointTimeSeries :channel="2" />
+      <PointTimeSeries v-for="channel in ACTIVE_CHANNELS" :key="channel" :channel="channel" />
     </div>
 
     <MapView />
