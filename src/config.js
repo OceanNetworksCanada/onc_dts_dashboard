@@ -7,6 +7,11 @@ export const DEFAULT_DEVICE_CODE = 'SILIXADTSXT19083'
 // Matches channel_points default in parse_xt_json (utils.py:21).
 export const CHANNEL_POINTS = { 1: 2206, 2: 1561 }
 
+// Channels shown in the UI (status bar, charts, map). The parsing/store layer stays
+// generic for any channel present in CHANNEL_POINTS — this just controls what's displayed.
+// Channel 1 is currently disabled in the UI; add it back here to re-enable.
+export const ACTIVE_CHANNELS = [2]
+
 export const ONC_RAWDATA_URL = 'https://data.oceannetworks.ca/api/rawdata/device'
 
 // Poll cadence once caught up to the live edge (matches RawDataFetcher's sleep(5)).

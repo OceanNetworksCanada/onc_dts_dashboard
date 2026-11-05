@@ -1,14 +1,20 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import cableRouteRaw from '../assets/cable-route.geojson?raw'
 import backboneCableRaw from '../assets/backbone-cable.geojson?raw'
 import { dtsStore, trimProfile } from '../lib/store.js'
 import { valueToCss } from '../lib/colormap.js'
+import { ACTIVE_CHANNELS } from '../config.js'
 
-const cableRoute = JSON.parse(cableRouteRaw)
+const cableRouteAll = JSON.parse(cableRouteRaw)
 const backboneCable = JSON.parse(backboneCableRaw)
+// Only draw/color the cable geometry for channels currently shown in the UI.
+const cableRoute = {
+  ...cableRouteAll,
+  features: cableRouteAll.features.filter((f) => ACTIVE_CHANNELS.includes(f.properties.channel)),
+}
 
 // GMRT (Global Multi-Resolution Topography) bathymetry, via their WMS GetMap endpoint wired up
 // as a raster tile source using MapLibre's `{bbox-epsg-3857}` template token — no API key,
@@ -175,7 +181,7 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => [dtsStore.latest(1), dtsStore.latest(2), dtsStore.state.trim[1], dtsStore.state.trim[2]],
+  () => ACTIVE_CHANNELS.flatMap((ch) => [dtsStore.latest(ch), dtsStore.state.trim[ch]]),
   refreshPoints,
 )
 </script>
@@ -185,8 +191,9 @@ watch(
     <div class="header">
       <span>Cable route — colored by latest temperature</span>
       <span class="muted">
-        <span class="dot" :style="{ background: CHANNEL_COLOR[1] }"></span> Channel 1
-        <span class="dot" :style="{ background: CHANNEL_COLOR[2] }"></span> Channel 2
+        <template v-for="channel in ACTIVE_CHANNELS" :key="channel">
+          <span class="dot" :style="{ background: CHANNEL_COLOR[channel] }"></span> Channel {{ channel }}
+        </template>
       </span>
     </div>
     <p class="muted note">

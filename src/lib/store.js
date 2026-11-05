@@ -7,6 +7,7 @@ import {
   POINTS_STORAGE_KEY,
   COLOR_RANGE_STORAGE_KEY,
   AVERAGE_WINDOW_MS,
+  ACTIVE_CHANNELS,
 } from '../config.js'
 
 function createChannelState() {
@@ -178,13 +179,13 @@ export function createDtsStore() {
   }
 
   /**
-   * Temperature min/max across BOTH channels' currently-buffered, trim-applied profiles —
-   * the auto-computed color/axis range, before any manual override.
+   * Temperature min/max across all ACTIVE_CHANNELS' currently-buffered, trim-applied
+   * profiles — the auto-computed color/axis range, before any manual override.
    */
   function autoTemperatureRange() {
     let min = Infinity
     let max = -Infinity
-    for (const ch of [1, 2]) {
+    for (const ch of ACTIVE_CHANNELS) {
       const trim = getTrim(ch)
       for (const p of history(ch)) {
         const tp = trimProfile(p, trim)

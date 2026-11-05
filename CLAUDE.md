@@ -34,6 +34,12 @@ and phase breakdown; this file is working notes for continuing implementation.
 3. **Channel point counts are fixed per channel**: `CHANNEL_POINTS = {1: 2206, 2: 1561}` in
    `src/config.js`, matching the Python default. This determines how many points from
    `first external point` onward are kept when trimming to the external fiber span.
+3a. **Which channels appear in the UI is controlled by `ACTIVE_CHANNELS`** in `src/config.js`
+   (currently `[2]` — Channel 1 is disabled in the UI but the parsing/store layer stays fully
+   generic per-channel). `App.vue`, `StatusBar.vue`, `MapView.vue`, and
+   `dtsStore.autoTemperatureRange()` all iterate `ACTIVE_CHANNELS` instead of hardcoding
+   `[1, 2]`/`1` — add a channel back by editing this one list, not by re-adding per-component
+   hardcoding.
 4. **The live instrument may be offline** for extended periods (it was during this build).
    The dev flow for testing without live data: connect with a **historical `startTime`**
    (e.g. `2025-07-30T20:33:00.000Z` — known to have data, used throughout dev/testing) via
