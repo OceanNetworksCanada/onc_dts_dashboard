@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import maplibregl from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import cableRouteRaw from '../assets/cable-route.geojson?raw'
 import backboneCableRaw from '../assets/backbone-cable.geojson?raw'
